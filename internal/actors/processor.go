@@ -15,25 +15,27 @@ var (
 	fallbackPaymentProcessor = "fallback"
 )
 
-type PaymentProcessorAPIActor struct {
+type PaymentProcessorActor struct {
 	client               *fasthttp.Client
 	defaultProcessorURL  string
 	fallbackProcessorURL string
 	bestPaymentProcessor string
 	dbActorPID           *actor.PID
+	retryActorPID        *actor.PID
 	engine               *actor.Engine
 }
 
-func (a *PaymentProcessorAPIActor) Receive(c *actor.Context) {
+func (a *PaymentProcessorActor) Receive(c *actor.Context) {
 	switch msg := c.Message().(type) {
 	case actor.Started:
 		a.engine = c.Engine()
 		a.bestPaymentProcessor = defaultPaymentProcessor
+		c.Engine().Subscribe(c.PID())
 	case messages.PaymentProcessorChanged:
 		a.bestPaymentProcessor = msg.Processor
 	case messages.ProcessPayment:
 		if !a.hasAvailableProcessor() {
-			a.scheduleRetry(c.PID(), msg.Payment)
+			a.scheduleRetry(c.PID(), msg)
 			return
 		}
 
@@ -46,7 +48,7 @@ func (a *PaymentProcessorAPIActor) Receive(c *actor.Context) {
 	}
 }
 
-func (a *PaymentProcessorAPIActor) hasAvailableProcessor() bool {
+func (a *PaymentProcessorActor) hasAvailableProcessor() bool {
 	if a.bestPaymentProcessor != nonePaymentProcessor {
 		return true
 	}
@@ -54,7 +56,7 @@ func (a *PaymentProcessorAPIActor) hasAvailableProcessor() bool {
 	return false
 }
 
-func (a *PaymentProcessorAPIActor) callProcessor(c *actor.Context, processor string, msg messages.ProcessPayment) {
+func (a *PaymentProcessorActor) callProcessor(c *actor.Context, processor string, msg messages.ProcessPayment) {
 	url := a.defaultProcessorURL
 
 	if processor == fallbackPaymentProcessor {
@@ -78,23 +80,22 @@ func (a *PaymentProcessorAPIActor) callProcessor(c *actor.Context, processor str
 
 	err := a.client.Do(req, resp)
 	if isErr(resp, err) {
-		a.scheduleRetry(c.PID(), payment)
+		a.scheduleRetry(c.PID(), msg)
 		return
 	}
 
 	a.callDB(payment, processor)
 }
 
-func (a *PaymentProcessorAPIActor) scheduleRetry(sender *actor.PID, p messages.Payment) {
-	// TODO: implement exponential backoff strategy
-	// TODO: get retry actor pid
-	a.engine.Send(sender, messages.ScheduleRetry{
+func (a *PaymentProcessorActor) scheduleRetry(sender *actor.PID, msg messages.ProcessPayment) {
+	a.engine.Send(a.retryActorPID, messages.ScheduleRetry{
 		Sender:  sender,
-		Payment: p,
+		Payment: msg.Payment,
+		Tries:   msg.Tries,
 	})
 }
 
-func (a *PaymentProcessorAPIActor) callDB(p messages.Payment, processor string) {
+func (a *PaymentProcessorActor) callDB(p messages.Payment, processor string) {
 	a.engine.Send(a.dbActorPID, messages.PushPayment{
 		Payment:     p,
 		ProcessedBy: processor,
@@ -117,17 +118,19 @@ func isErr(resp *fasthttp.Response, err error) bool {
 	return false
 }
 
-func NewPaymentProcessorAPIActor(
+func NewPaymentProcessorActor(
 	client *fasthttp.Client,
 	defaultURL, fallbackURL string,
 	dbActorPID *actor.PID,
+	retryActorPID *actor.PID,
 ) actor.Producer {
 	return func() actor.Receiver {
-		return &PaymentProcessorAPIActor{
+		return &PaymentProcessorActor{
 			client:               client,
-			defaultProcessorURL:  defaultURL,
-			fallbackProcessorURL: fallbackURL,
+			defaultProcessorURL:  defaultURL + "/payments",
+			fallbackProcessorURL: fallbackURL + "/payments",
 			dbActorPID:           dbActorPID,
+			retryActorPID:        retryActorPID,
 		}
 	}
 }

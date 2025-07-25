@@ -4,8 +4,10 @@ go 1.24.4
 
 require (
 	github.com/anthdm/hollywood v1.0.5
+	github.com/buger/jsonparser v1.1.1
 	github.com/goccy/go-json v0.10.5
 	github.com/redis/go-redis/v9 v9.11.0
+	github.com/shopspring/decimal v1.4.0
 	github.com/valyala/fasthttp v1.64.0
 )
 
@@ -18,5 +20,6 @@ require (
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
+	golang.org/x/sys v0.34.0 // indirect
 	google.golang.org/protobuf v1.32.0 // indirect
 )

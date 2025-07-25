@@ -3,27 +3,31 @@ package actors
 import (
 	"github.com/anthdm/hollywood/actor"
 	"github.com/rbenatti8/rinha-de-backend-2025/internal/messages"
+	"math/rand"
 	"time"
 )
 
 type RetryActor struct {
-	heap      *RetryHeap
-	repeater  actor.SendRepeater
-	engine    *actor.Engine
-	retryTime time.Duration
+	heap            *RetryHeap
+	repeater        actor.SendRepeater
+	engine          *actor.Engine
+	retryTime       int
+	maxBackoffDelay int
 }
 
 func (r *RetryActor) Receive(c *actor.Context) {
 	switch msg := c.Message().(type) {
 	case actor.Started:
 		r.engine = c.Engine()
-		r.repeater = c.SendRepeat(c.PID(), messages.Retry{}, r.retryTime)
+		r.repeater = c.SendRepeat(c.PID(), messages.Retry{}, time.Duration(r.retryTime)*time.Millisecond)
 	case messages.ScheduleRetry:
+		nextTry := time.Now().UTC().Add(backoff(msg.Tries, r.maxBackoffDelay))
+
 		r.heap.Push(RetryItem{
 			Sender:  msg.Sender,
 			Payment: msg.Payment,
 			Tries:   msg.Tries,
-			NextTry: msg.NextTry,
+			NextTry: nextTry,
 		})
 	case messages.Retry:
 		now := time.Now().UTC()
@@ -35,6 +39,7 @@ func (r *RetryActor) Receive(c *actor.Context) {
 			}
 
 			item, _ = r.heap.Pop()
+
 			r.engine.Send(item.Sender, messages.ProcessPayment{
 				Payment: item.Payment,
 				Tries:   item.Tries + 1,
@@ -123,4 +128,36 @@ func (h *RetryHeap) less(i, j int) bool {
 
 func (h *RetryHeap) swap(i, j int) {
 	h.items[i], h.items[j] = h.items[j], h.items[i]
+}
+
+func backoff(attempt int, maxDelay int) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+
+	base := 10
+	mult := 1 << (attempt - 1)
+	delay := base * mult
+
+	jitter := rand.Intn(base)
+
+	total := delay + jitter
+
+	if total > maxDelay {
+		total = maxDelay
+	}
+
+	return time.Duration(total) * time.Millisecond
+}
+
+func NewRetryActor(retryTime int, maxBackoffDelay int, heapSize int) actor.Producer {
+	return func() actor.Receiver {
+		return &RetryActor{
+			heap: &RetryHeap{
+				items: make([]RetryItem, 0, heapSize),
+			},
+			retryTime:       retryTime,
+			maxBackoffDelay: maxBackoffDelay,
+		}
+	}
 }

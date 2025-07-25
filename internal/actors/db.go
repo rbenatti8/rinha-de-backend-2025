@@ -5,9 +5,12 @@ import (
 	"github.com/anthdm/hollywood/actor"
 	"github.com/rbenatti8/rinha-de-backend-2025/internal/messages"
 	"github.com/redis/go-redis/v9"
+	"github.com/shopspring/decimal"
 	"log/slog"
 	"strconv"
+	"strings"
 	"sync"
+	"time"
 )
 
 var (
@@ -30,24 +33,93 @@ type DBActor struct {
 func (a *DBActor) Receive(c *actor.Context) {
 	switch msg := c.Message().(type) {
 	case messages.PushPayment:
-		bufPtr := bufPool.Get().(*[]byte)
-		buf := (*bufPtr)[:0]
+		a.pushPayment(msg)
+	case messages.SummarizePayments:
+		a.summarize(c, msg)
+	case messages.PurgePayments:
+		a.purgePayments(c)
+	}
+}
 
-		buf = append(buf, msg.Payment.CID...)
-		buf = append(buf, '|')
-		buf = strconv.AppendFloat(buf, msg.Payment.Amount, 'f', -1, 64)
-		buf = append(buf, '|')
-		buf = append(buf, msg.Payment.RequestedAt...)
-		buf = append(buf, '|')
-		buf = append(buf, msg.ProcessedBy...)
+func (a *DBActor) purgePayments(c *actor.Context) {
+	err := a.client.Del(context.Background(), keyPaymentsAll).Err()
+	if err != nil {
+		slog.Error("Error purging payments from Redis", slog.String("error", err.Error()))
+	}
 
-		err := a.client.RPush(ctx, keyPaymentsAll, string(buf)).Err()
-		if err != nil {
-			slog.Error("Error pushing payments to Redis", slog.String("error", err.Error()))
+	c.Respond(struct{}{})
+}
+func (a *DBActor) pushPayment(msg messages.PushPayment) {
+	bufPtr := bufPool.Get().(*[]byte)
+	buf := (*bufPtr)[:0]
+
+	buf = append(buf, msg.Payment.CID...)
+	buf = append(buf, '|')
+	buf = strconv.AppendFloat(buf, msg.Payment.Amount, 'f', -1, 64)
+	buf = append(buf, '|')
+	buf = append(buf, msg.Payment.RequestedAt...)
+	buf = append(buf, '|')
+	buf = append(buf, msg.ProcessedBy...)
+
+	err := a.client.RPush(ctx, keyPaymentsAll, string(buf)).Err()
+	if err != nil {
+		slog.Error("Error pushing payments to Redis", slog.String("error", err.Error()))
+	}
+
+	bufPool.Put(bufPtr)
+}
+func (a *DBActor) summarize(c *actor.Context, msg messages.SummarizePayments) {
+	summary := messages.SummarizedPayments{}
+
+	lines, err := a.client.LRange(context.Background(), keyPaymentsAll, 0, -1).Result()
+	if err != nil {
+		slog.Error("Error pulling payments from Redis", slog.String("error", err.Error()))
+		c.Respond(struct{}{})
+	}
+
+	cidMap := make(map[string]struct{})
+
+	for _, line := range lines {
+		fields := strings.Split(line, "|")
+
+		if _, exists := cidMap[fields[0]]; exists {
+			slog.Warn("Duplicate CID found, skipping", slog.String("CID", fields[0]))
+			continue
 		}
 
-		bufPool.Put(bufPtr)
+		cidMap[fields[0]] = struct{}{}
+
+		requestedAt := fields[2]
+		if msg.From != nil {
+			timestamp, _ := time.Parse(time.RFC3339Nano, requestedAt)
+			if timestamp.UTC().Before(*msg.From) {
+				continue
+			}
+		}
+
+		if msg.To != nil {
+			timestamp, _ := time.Parse(time.RFC3339Nano, requestedAt)
+			if timestamp.UTC().After(*msg.To) {
+				continue
+			}
+		}
+
+		processedBy := fields[3]
+
+		amount := fields[1]
+		value, _ := decimal.NewFromString(amount)
+
+		if processedBy == "default" {
+			summary.Default.TotalAmount = summary.Default.TotalAmount.Add(value)
+			summary.Default.TotalRequests++
+			continue
+		}
+
+		summary.Fallback.TotalAmount = summary.Fallback.TotalAmount.Add(value)
+		summary.Fallback.TotalRequests++
 	}
+
+	c.Respond(summary)
 }
 
 func NewDBActor(client *redis.Client) actor.Producer {
