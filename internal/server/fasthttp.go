@@ -72,11 +72,7 @@ func (h *Handler) handleProcessPayment(ctx *fasthttp.RequestCtx) {
 }
 
 func (h *Handler) handlePurgePayments(ctx *fasthttp.RequestCtx) {
-	resp := h.engine.Request(h.dbActor, messages.PurgePayments{}, time.Second*5)
-	if _, err := resp.Result(); err != nil {
-		ctx.Error("Internal Server Error", fasthttp.StatusInternalServerError)
-		return
-	}
+	h.engine.Send(h.dbActor, messages.PurgePayments{})
 
 	ctx.SetStatusCode(fasthttp.StatusOK)
 }
@@ -96,6 +92,8 @@ func (h *Handler) handleGet(ctx *fasthttp.RequestCtx) {
 func (h *Handler) handleGetSummary(ctx *fasthttp.RequestCtx) {
 	msg := buildMessage(ctx)
 
+	slog.Info("Summary payments", slog.String("from", msg.From.String()), slog.String("to", msg.To.String()))
+
 	resp := h.engine.Request(h.dbActor, msg, 5*time.Second)
 
 	res, err := resp.Result()
@@ -110,7 +108,18 @@ func (h *Handler) handleGetSummary(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	bodyResp, _ := goJson.Marshal(summaryResp)
+	bodyResp, _ := goJson.Marshal(messages.SummarizedPayments{
+		Default: messages.SummarizedProcessor{
+			TotalRequests: summaryResp.Default.TotalRequests,
+			TotalAmount:   summaryResp.Default.TotalAmount,
+		},
+		Fallback: messages.SummarizedProcessor{
+			TotalRequests: summaryResp.Fallback.TotalRequests,
+			TotalAmount:   summaryResp.Fallback.TotalAmount,
+		},
+	})
+
+	//bodyResp, _ := goJson.Marshal(messages.SummarizedPayments{})
 
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetContentType("application/json")
@@ -123,14 +132,14 @@ func buildMessage(c *fasthttp.RequestCtx) messages.SummarizePayments {
 
 	summaryReq := messages.SummarizePayments{}
 
-	parsedFrom, err := time.Parse(time.RFC3339, string(from))
+	pFrom, err := time.Parse(time.RFC3339Nano, string(from))
 	if err == nil {
-		summaryReq.From = &parsedFrom
+		summaryReq.From = &pFrom
 	}
 
-	parsedTo, err := time.Parse(time.RFC3339, string(to))
+	pTo, err := time.Parse(time.RFC3339Nano, string(to))
 	if err == nil {
-		summaryReq.To = &parsedTo
+		summaryReq.To = &pTo
 	}
 
 	return summaryReq

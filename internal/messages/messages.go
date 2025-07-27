@@ -15,7 +15,10 @@ type Payment struct {
 type PushPayment struct {
 	Payment     Payment
 	ProcessedBy string
+	ProcessedAt time.Time
 }
+
+type PushToRedis struct{}
 
 type PurgePayments struct{}
 
@@ -47,5 +50,10 @@ type ScheduleRetry struct {
 type Retry struct {
 }
 type PaymentProcessorChanged struct {
+	Processor string
+}
+
+type CheckIntegrity struct {
+	Payment   Payment
 	Processor string
 }

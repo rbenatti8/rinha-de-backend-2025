@@ -18,13 +18,13 @@ func (p *Pool) GetActor(name string) *actor.PID {
 	return p.actors[index]
 }
 
-func NewPool(root *actor.Engine, props actor.Producer, size int) *Pool {
-	pool := &Pool{size: size}
+func NewPool(root *actor.Engine, props actor.Producer, kind string, poolSize, inboxSize int) *Pool {
+	pool := &Pool{size: poolSize}
 
-	for i := 0; i < size; i++ {
-		name := fmt.Sprintf("actor-%d", i)
+	for i := 0; i < poolSize; i++ {
+		name := fmt.Sprintf("%s-actor-%d", kind, i)
 
-		pid := root.Spawn(props, name)
+		pid := root.Spawn(props, name, actor.WithInboxSize(inboxSize))
 
 		pool.actors = append(pool.actors, pid)
 	}

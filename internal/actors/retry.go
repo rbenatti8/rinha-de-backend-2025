@@ -10,6 +10,7 @@ import (
 type RetryActor struct {
 	heap            *RetryHeap
 	repeater        actor.SendRepeater
+	hcChecker       checker
 	engine          *actor.Engine
 	retryTime       int
 	maxBackoffDelay int
@@ -30,6 +31,10 @@ func (r *RetryActor) Receive(c *actor.Context) {
 			NextTry: nextTry,
 		})
 	case messages.Retry:
+		if !r.hcChecker.HasHealthyProcessors() {
+			return
+		}
+
 		now := time.Now().UTC()
 
 		for {
@@ -135,7 +140,7 @@ func backoff(attempt int, maxDelay int) time.Duration {
 		attempt = 1
 	}
 
-	base := 10
+	base := 30
 	mult := 1 << (attempt - 1)
 	delay := base * mult
 
@@ -150,7 +155,7 @@ func backoff(attempt int, maxDelay int) time.Duration {
 	return time.Duration(total) * time.Millisecond
 }
 
-func NewRetryActor(retryTime int, maxBackoffDelay int, heapSize int) actor.Producer {
+func NewRetryActor(retryTime int, maxBackoffDelay int, heapSize int, hcChecker checker) actor.Producer {
 	return func() actor.Receiver {
 		return &RetryActor{
 			heap: &RetryHeap{
@@ -158,6 +163,7 @@ func NewRetryActor(retryTime int, maxBackoffDelay int, heapSize int) actor.Produ
 			},
 			retryTime:       retryTime,
 			maxBackoffDelay: maxBackoffDelay,
+			hcChecker:       hcChecker,
 		}
 	}
 }

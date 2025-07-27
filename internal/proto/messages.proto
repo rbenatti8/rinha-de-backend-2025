@@ -1,0 +1,39 @@
+syntax = "proto3";
+package msg;
+option go_package = "github.com/rbenatti8/rinha-de-backend-2025/internal/proto";
+
+
+message Ping {
+
+}
+
+message Pong {
+
+}
+message Payment {
+  string cid = 1;
+  double amount = 2;
+  string requested_at = 3;
+}
+
+message PurgePayments{}
+
+message PushPayment {
+  Payment payment = 1;
+  string processed_by = 2;
+}
+
+message SummarizePayments {
+  string from = 1;
+  string to = 2;
+}
+
+message SummarizedProcessor {
+  int64 total_requests = 1;
+  string total_amount = 2;
+}
+
+message SummarizedPayments {
+  SummarizedProcessor default = 1;
+  SummarizedProcessor fallback = 2;
+}
