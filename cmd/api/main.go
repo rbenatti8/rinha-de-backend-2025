@@ -78,7 +78,7 @@ func main() {
 	t := time.Now()
 
 	warmUpConnections(processorHTTPClient, paymentProcessorDefaultURL+"/payments", paymentProcessorPoolSize)
-	//warmUpConnections(processorHTTPClient, paymentProcessorFallbackURL+"/payments", paymentProcessorPoolSize/2)
+	warmUpConnections(processorHTTPClient, paymentProcessorFallbackURL+"/payments", paymentProcessorPoolSize/2)
 
 	slog.Info("Warm-up connections completed", slog.Duration("duration", time.Since(t)))
 
