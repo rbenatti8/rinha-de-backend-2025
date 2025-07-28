@@ -6,7 +6,9 @@ import (
 	"github.com/buger/jsonparser"
 	"github.com/redis/go-redis/v9"
 	"github.com/valyala/fasthttp"
+	"log"
 	"log/slog"
+	"math"
 	"net/http"
 	"sync/atomic"
 	"time"
@@ -112,24 +114,19 @@ func (c *Checker) checkServiceHealth() {
 func (c *Checker) chooseProcessor(hcs map[string]ServiceHealth) string {
 	def := hcs["default"]
 	fbk := hcs["fallback"]
-
 	now := time.Now()
 
-	if def.Failing && !c.isDefaultFailing {
-		c.isDefaultFailing = true
-		c.defaultFailingStartTime = now
-	}
+	if def.Failing || def.MinResponseTime > c.maxLatency {
+		if !c.isDefaultFailing {
+			c.isDefaultFailing = true
+			c.defaultFailingStartTime = now
+		}
+	} else {
+		if c.isDefaultFailing {
+			c.isDefaultFailing = false
+		}
 
-	if !def.Failing && c.isDefaultFailing {
-		c.isDefaultFailing = false
-	}
-
-	if def.Failing && fbk.Failing {
-		return "none"
-	}
-
-	if def.MinResponseTime > c.maxLatency && fbk.MinResponseTime > c.maxLatency {
-		return "none"
+		return "default"
 	}
 
 	if c.isDefaultFailing {
@@ -137,19 +134,34 @@ func (c *Checker) chooseProcessor(hcs map[string]ServiceHealth) string {
 		if elapsed < 20*time.Second {
 			return "waiting"
 		}
+	}
 
-		if !fbk.Failing && fbk.MinResponseTime < c.maxLatency {
-			return "fallback"
-		}
+	if !fbk.Failing && fbk.MinResponseTime < c.maxLatency {
+		log.Println("fallback: após 20s de falha do default")
+		return "fallback"
+	}
 
+	if def.Failing && fbk.Failing {
+		return "none"
+	}
+	if def.MinResponseTime > c.maxLatency && fbk.MinResponseTime > c.maxLatency {
 		return "none"
 	}
 
-	if !fbk.Failing && def.MinResponseTime > fbk.MinResponseTime+(fbk.MinResponseTime/2) {
+	if c.isDefaultFailing && !fbk.Failing && def.MinResponseTime > fbk.MinResponseTime+(fbk.MinResponseTime/2) {
+		log.Println("fallback: custo efetivo menor após 20s")
 		return "fallback"
 	}
 
 	return "default"
+
+}
+
+func computeEffectiveCost(tax float64, latency int64, failing bool) float64 {
+	if failing {
+		return math.Inf(1)
+	}
+	return tax + float64(latency)*0.001
 }
 
 func (c *Checker) SetValue(s string) {

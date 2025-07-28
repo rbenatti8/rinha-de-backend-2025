@@ -33,8 +33,6 @@ type DBActor struct {
 
 func (a *DBActor) Receive(c *actor.Context) {
 	switch msg := c.Message().(type) {
-	case actor.Started:
-		a.inbox.Start(a.pushBatchPayment)
 	case messages.PushPayment:
 		a.pushPayment(msg)
 		//a.inbox.Send(msg)
@@ -234,7 +232,6 @@ func NewDBActor(client *redis.Client) actor.Producer {
 	return func() actor.Receiver {
 		return &DBActor{
 			client: client,
-			inbox:  NewInbox(4096),
 		}
 	}
 }

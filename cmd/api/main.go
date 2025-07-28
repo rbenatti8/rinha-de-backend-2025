@@ -27,7 +27,7 @@ func main() {
 	decimal.MarshalJSONWithoutQuotes = true
 
 	handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+		Level: slog.LevelError,
 	})
 
 	logger := slog.New(handler)
@@ -40,12 +40,12 @@ func main() {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:         redisURL,
 		DB:           0,
-		MinIdleConns: 300,
-		PoolSize:     300,
+		MinIdleConns: 20,
+		PoolSize:     20,
 		PoolTimeout:  60 * time.Second,
 	})
 
-	warmupAllRedisConns(rdb, 300)
+	warmupAllRedisConns(rdb, 20)
 
 	engine, _ := actor.NewEngine(actor.NewEngineConfig())
 
@@ -73,7 +73,14 @@ func main() {
 		Dial: fasthttp.Dial,
 	}
 
-	isPublisher := env.GetEnvAsBool("IS_PUBLISHER", false)
+	isPublisher := env.GetEnvAsBool("IS_PUBLISHER", true)
+
+	t := time.Now()
+
+	warmUpConnections(processorHTTPClient, paymentProcessorDefaultURL+"/payments", paymentProcessorPoolSize)
+	warmUpConnections(processorHTTPClient, paymentProcessorFallbackURL+"/payments", paymentProcessorPoolSize/2)
+
+	slog.Info("Warm-up connections completed", slog.Duration("duration", time.Since(t)))
 
 	hcHTTPClient := &fasthttp.Client{
 		TLSConfig: &tls.Config{
@@ -93,22 +100,14 @@ func main() {
 	hc := healthyChecker.New(rdb, hcHTTPClient, paymentProcessorDefaultURL, paymentProcessorFallbackURL, 500, isPublisher)
 	hc.Start()
 
-	t := time.Now()
-
-	warmUpConnections(processorHTTPClient, paymentProcessorDefaultURL+"/payments", paymentProcessorPoolSize)
-	warmUpConnections(processorHTTPClient, paymentProcessorFallbackURL+"/payments", paymentProcessorPoolSize)
-
-	slog.Info("Warm-up connections completed", slog.Duration("duration", time.Since(t)))
-	engine.Spawn(actors.NewDBActor(rdb), "db-actor")
-
-	//dbActorPool := actors.NewPool(engine, actors.NewDBActor(rdb), dbPoolSize, 1048)
-	integrityActor := actors.NewPool(engine, actors.NewDBActor(rdb), "integrity", 50, 1024)
 	dbActor := engine.Spawn(actors.NewDBActor(rdb), "db-actor")
+	integrityProps := actors.NewIntegrityActor(processorHTTPClient, paymentProcessorDefaultURL, paymentProcessorFallbackURL, dbActor)
+	integrityPool := actors.NewPool(engine, integrityProps, "integrity", 1, 512)
 
 	retryActor := engine.Spawn(actors.NewRetryActor(retryTime, maxBackoffDelay, heapSize, hc), "retry-actor", actor.WithInboxSize(heapSize))
-	processorProps := actors.NewPaymentProcessorActor(processorHTTPClient, paymentProcessorDefaultURL, paymentProcessorFallbackURL, rdb, retryActor, integrityActor, hc)
+	processorProps := actors.NewPaymentProcessorActor(processorHTTPClient, paymentProcessorDefaultURL, paymentProcessorFallbackURL, rdb, retryActor, integrityPool, hc)
 
-	processorActorPool := actors.NewPool(engine, processorProps, "processor", paymentProcessorPoolSize, 1024)
+	processorActorPool := actors.NewPool(engine, processorProps, "processor", paymentProcessorPoolSize, 2048)
 
 	usePreFork := env.GetEnvAsBool("USE_PREFORK", false)
 
