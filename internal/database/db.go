@@ -25,18 +25,12 @@ var (
 
 type DB struct {
 	redisClient *redis.Client
-	inbox       *Inbox
 }
 
 func New(redis *redis.Client) *DB {
 	return &DB{
 		redisClient: redis,
-		inbox:       NewInbox(4048),
 	}
-}
-
-func (db *DB) Push(msg messages.PushPayment) {
-	db.inbox.Send(msg)
 }
 
 func (db *DB) pushBatchPayment(msgs []messages.PushPayment) {
@@ -72,12 +66,4 @@ func (db *DB) pushBatchPayment(msgs []messages.PushPayment) {
 	if dur := time.Since(start); dur > 50*time.Millisecond {
 		slog.Warn("Slow batch push to Redis", slog.Int("count", len(msgs)), slog.Duration("duration", dur))
 	}
-}
-
-func (db *DB) Stop() {
-	_ = db.inbox.Stop()
-}
-
-func (db *DB) Start() {
-	db.inbox.Start(db.pushBatchPayment)
 }

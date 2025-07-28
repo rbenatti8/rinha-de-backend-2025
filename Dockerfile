@@ -8,7 +8,7 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o bin/api ./cmd/api && CGO_ENABLED=0 GOOS=linux go build -o bin/database ./cmd/database
+RUN CGO_ENABLED=0 GOOS=linux go build -o bin/api ./cmd/api
 
 FROM scratch as api
 
@@ -17,15 +17,5 @@ WORKDIR /app
 COPY --from=builder /app/bin/api .
 
 EXPOSE 5000
-EXPOSE 4001
 
 CMD ["./api"]
-
-FROM scratch as database
-
-WORKDIR /app
-
-COPY --from=builder /app/bin/database .
-
-EXPOSE 4000
-CMD ["./database"]

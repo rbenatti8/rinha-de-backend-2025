@@ -1,4 +1,4 @@
-package healthyChecker
+package healthy
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"github.com/buger/jsonparser"
 	"github.com/redis/go-redis/v9"
 	"github.com/valyala/fasthttp"
-	"log"
 	"log/slog"
 	"math"
 	"net/http"
@@ -111,6 +110,7 @@ func (c *Checker) checkServiceHealth() {
 	c.broadcastProcessor(processor)
 }
 
+// TODO: improve this
 func (c *Checker) chooseProcessor(hcs map[string]ServiceHealth) string {
 	def := hcs["default"]
 	fbk := hcs["fallback"]
@@ -137,7 +137,6 @@ func (c *Checker) chooseProcessor(hcs map[string]ServiceHealth) string {
 	}
 
 	if !fbk.Failing && fbk.MinResponseTime < c.maxLatency {
-		log.Println("fallback: após 20s de falha do default")
 		return "fallback"
 	}
 
@@ -149,7 +148,6 @@ func (c *Checker) chooseProcessor(hcs map[string]ServiceHealth) string {
 	}
 
 	if c.isDefaultFailing && !fbk.Failing && def.MinResponseTime > fbk.MinResponseTime+(fbk.MinResponseTime/2) {
-		log.Println("fallback: custo efetivo menor após 20s")
 		return "fallback"
 	}
 

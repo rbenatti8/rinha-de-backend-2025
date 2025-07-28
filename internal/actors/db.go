@@ -28,14 +28,12 @@ var (
 
 type DBActor struct {
 	client *redis.Client
-	inbox  *Inbox
 }
 
 func (a *DBActor) Receive(c *actor.Context) {
 	switch msg := c.Message().(type) {
 	case messages.PushPayment:
 		a.pushPayment(msg)
-		//a.inbox.Send(msg)
 	case messages.SummarizePayments:
 		a.summarize(c, msg)
 	case messages.PurgePayments:
@@ -43,9 +41,6 @@ func (a *DBActor) Receive(c *actor.Context) {
 	}
 }
 
-func (a *DBActor) Push(msg messages.PushPayment) {
-	a.inbox.Send(msg)
-}
 func (a *DBActor) purgePayments(c *actor.Context) {
 	err := a.client.Del(context.Background(), keyPaymentsAll).Err()
 	if err != nil {
@@ -173,60 +168,6 @@ func (a *DBActor) summarize(c *actor.Context, msg messages.SummarizePayments) {
 
 	c.Respond(summary)
 }
-
-//func (a *DBActor) summarize(c *actor.Context, msg messages.SummarizePayments) {
-//	summary := messages.SummarizedPayments{}
-//
-//	lines, err := a.client.LRange(context.Background(), keyPaymentsAll, 0, -1).Result()
-//	if err != nil {
-//		slog.Error("Error pulling payments from Redis", slog.String("error", err.Error()))
-//		c.Respond(struct{}{})
-//	}
-//
-//	cidMap := make(map[string]struct{})
-//
-//	for _, line := range lines {
-//		fields := strings.Split(line, "|")
-//
-//		if _, exists := cidMap[fields[0]]; exists {
-//			slog.Warn("Duplicate CID found, skipping", slog.String("CID", fields[0]))
-//			continue
-//		}
-//
-//		cidMap[fields[0]] = struct{}{}
-//
-//		requestedAt := fields[2]
-//		if msg.From != nil {
-//			timestamp, _ := time.Parse(time.RFC3339Nano, requestedAt)
-//			if timestamp.UTC().Before(*msg.From) {
-//				continue
-//			}
-//		}
-//
-//		if msg.To != nil {
-//			timestamp, _ := time.Parse(time.RFC3339Nano, requestedAt)
-//			if timestamp.UTC().After(*msg.To) {
-//				continue
-//			}
-//		}
-//
-//		processedBy := fields[3]
-//
-//		amount := fields[1]
-//		value, _ := decimal.NewFromString(amount)
-//
-//		if processedBy == "default" {
-//			summary.Default.TotalAmount = summary.Default.TotalAmount.Add(value)
-//			summary.Default.TotalRequests++
-//			continue
-//		}
-//
-//		summary.Fallback.TotalAmount = summary.Fallback.TotalAmount.Add(value)
-//		summary.Fallback.TotalRequests++
-//	}
-//
-//	c.Respond(summary)
-//}
 
 func NewDBActor(client *redis.Client) actor.Producer {
 	return func() actor.Receiver {

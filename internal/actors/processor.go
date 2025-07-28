@@ -4,6 +4,7 @@ import (
 	"github.com/anthdm/hollywood/actor"
 	goJson "github.com/goccy/go-json"
 	"github.com/rbenatti8/rinha-de-backend-2025/internal/database"
+	"github.com/rbenatti8/rinha-de-backend-2025/internal/healthy"
 	"github.com/rbenatti8/rinha-de-backend-2025/internal/messages"
 	"github.com/redis/go-redis/v9"
 	"github.com/valyala/fasthttp"
@@ -21,7 +22,7 @@ var (
 
 type PaymentProcessorActor struct {
 	client               *fasthttp.Client
-	hcChecker            checker
+	hcChecker            *healthy.Checker
 	defaultProcessorURL  string
 	fallbackProcessorURL string
 	bestPaymentProcessor string
@@ -186,7 +187,7 @@ func NewPaymentProcessorActor(
 	redis *redis.Client,
 	retryActorPID *actor.PID,
 	integrityActorPool *Pool,
-	hcChecker checker,
+	hcChecker *healthy.Checker,
 ) actor.Producer {
 	return func() actor.Receiver {
 		return &PaymentProcessorActor{

@@ -2,6 +2,7 @@ package actors
 
 import (
 	"github.com/anthdm/hollywood/actor"
+	"github.com/rbenatti8/rinha-de-backend-2025/internal/healthy"
 	"github.com/rbenatti8/rinha-de-backend-2025/internal/messages"
 	"math/rand"
 	"time"
@@ -10,7 +11,7 @@ import (
 type RetryActor struct {
 	heap            *RetryHeap
 	repeater        actor.SendRepeater
-	hcChecker       checker
+	hcChecker       *healthy.Checker
 	engine          *actor.Engine
 	retryTime       int
 	maxBackoffDelay int
@@ -155,7 +156,7 @@ func backoff(attempt int, maxDelay int) time.Duration {
 	return time.Duration(total) * time.Millisecond
 }
 
-func NewRetryActor(retryTime int, maxBackoffDelay int, heapSize int, hcChecker checker) actor.Producer {
+func NewRetryActor(retryTime int, maxBackoffDelay int, heapSize int, hcChecker *healthy.Checker) actor.Producer {
 	return func() actor.Receiver {
 		return &RetryActor{
 			heap: &RetryHeap{

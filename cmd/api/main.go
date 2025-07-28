@@ -8,7 +8,7 @@ import (
 	"github.com/anthdm/hollywood/actor"
 	"github.com/rbenatti8/rinha-de-backend-2025/internal/actors"
 	"github.com/rbenatti8/rinha-de-backend-2025/internal/env"
-	"github.com/rbenatti8/rinha-de-backend-2025/internal/healthyChecker"
+	"github.com/rbenatti8/rinha-de-backend-2025/internal/healthy"
 	"github.com/rbenatti8/rinha-de-backend-2025/internal/server"
 	"github.com/redis/go-redis/v9"
 	"github.com/shopspring/decimal"
@@ -78,7 +78,7 @@ func main() {
 	t := time.Now()
 
 	warmUpConnections(processorHTTPClient, paymentProcessorDefaultURL+"/payments", paymentProcessorPoolSize)
-	warmUpConnections(processorHTTPClient, paymentProcessorFallbackURL+"/payments", paymentProcessorPoolSize/2)
+	//warmUpConnections(processorHTTPClient, paymentProcessorFallbackURL+"/payments", paymentProcessorPoolSize/2)
 
 	slog.Info("Warm-up connections completed", slog.Duration("duration", time.Since(t)))
 
@@ -97,7 +97,7 @@ func main() {
 		Dial: fasthttp.Dial,
 	}
 
-	hc := healthyChecker.New(rdb, hcHTTPClient, paymentProcessorDefaultURL, paymentProcessorFallbackURL, 500, isPublisher)
+	hc := healthy.New(rdb, hcHTTPClient, paymentProcessorDefaultURL, paymentProcessorFallbackURL, 500, isPublisher)
 	hc.Start()
 
 	dbActor := engine.Spawn(actors.NewDBActor(rdb), "db-actor")

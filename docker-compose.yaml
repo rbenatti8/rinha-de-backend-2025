@@ -27,7 +27,7 @@ services:
         - ACTOR_POOL_SIZE=300
         - WRITE_TIMEOUT=500
         - READ_TIMEOUT=500
-        - HEAP_SIZE=20000
+        - HEAP_SIZE=40000
         - USE_PREFORK=true
         - IS_PUBLISHER=true
       depends_on:
@@ -48,7 +48,7 @@ services:
       - ACTOR_POOL_SIZE=300
       - WRITE_TIMEOUT=500
       - READ_TIMEOUT=500
-      - HEAP_SIZE=20000
+      - HEAP_SIZE=40000
       - USE_PREFORK=true
       - IS_PUBLISHER=false
   pod3:
@@ -61,7 +61,7 @@ services:
       - ACTOR_POOL_SIZE=300
       - WRITE_TIMEOUT=500
       - READ_TIMEOUT=500
-      - HEAP_SIZE=20000
+      - HEAP_SIZE=40000
       - USE_PREFORK=true
       - IS_PUBLISHER=false
   pod4:
@@ -74,7 +74,7 @@ services:
       - ACTOR_POOL_SIZE=300
       - WRITE_TIMEOUT=500
       - READ_TIMEOUT=500
-      - HEAP_SIZE=20000
+      - HEAP_SIZE=40000
       - USE_PREFORK=true
       - IS_PUBLISHER=false
   redis:
@@ -87,7 +87,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.3"
+          cpus: "0.1"
           memory: "35MB"
 
 networks:

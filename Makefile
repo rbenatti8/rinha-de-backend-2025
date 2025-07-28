@@ -13,7 +13,7 @@ remove-containers:
 setup-test:
 	@cd scripts/docker && docker compose up -d && cd .. && docker compose up -d
 k6-run:
-	cd scripts/k6 && k6 run -e MAX_REQUESTS=550 rinha.js
+	cd scripts/k6 && k6 run -e MAX_REQUESTS=1000 rinha.js
 tools:
 	@go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 	@go install google.golang.org/grpc/cmd/protoc-geproton-go-grpc@latest
