@@ -27,7 +27,10 @@ var (
 )
 
 type DBActor struct {
-	client *redis.Client
+	client   *redis.Client
+	mu       sync.Mutex
+	batch    []messages.PushPayment
+	maxBatch int
 }
 
 func (a *DBActor) Receive(c *actor.Context) {

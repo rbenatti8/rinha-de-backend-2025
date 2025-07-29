@@ -6,9 +6,11 @@ import (
 	"fmt"
 	_ "github.com/KimMachineGun/automemlimit"
 	"github.com/anthdm/hollywood/actor"
+	"github.com/anthdm/hollywood/remote"
 	"github.com/rbenatti8/rinha-de-backend-2025/internal/actors"
 	"github.com/rbenatti8/rinha-de-backend-2025/internal/env"
 	"github.com/rbenatti8/rinha-de-backend-2025/internal/healthy"
+	"github.com/rbenatti8/rinha-de-backend-2025/internal/proto"
 	"github.com/rbenatti8/rinha-de-backend-2025/internal/server"
 	"github.com/redis/go-redis/v9"
 	"github.com/shopspring/decimal"
@@ -40,14 +42,36 @@ func main() {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:         redisURL,
 		DB:           0,
-		MinIdleConns: 20,
-		PoolSize:     20,
+		MinIdleConns: 5,
+		PoolSize:     10,
 		PoolTimeout:  60 * time.Second,
 	})
 
-	warmupAllRedisConns(rdb, 20)
+	//warmupAllRedisConns(rdb, 20)
 
-	engine, _ := actor.NewEngine(actor.NewEngineConfig())
+	clientHost := env.GetEnvAsString("CLIENT_HOST", "localhost:4001")
+	c := remote.NewConfig()
+	c.WithBufferSize(524_288)
+	r := remote.New(clientHost, c)
+	engine, err := actor.NewEngine(actor.NewEngineConfig().WithRemote(r))
+	if err != nil {
+		panic(err)
+	}
+
+	//engine, _ := actor.NewEngine(actor.NewEngineConfig())
+	remoteURL := env.GetEnvAsString("REMOTE_HOST", "localhost:4000")
+	serverPID := actor.NewPID(remoteURL, "remote/database")
+
+	resp := engine.Request(serverPID, &proto.Ping{}, 1*time.Second)
+	res, errR := resp.Result()
+	if errR != nil {
+		panic(errR)
+	}
+
+	_, ok := res.(*proto.Pong)
+	if !ok {
+		panic("failed to assert response")
+	}
 
 	retryTime := env.GetEnvAsInt("RETRY_TIME", 10)
 	maxBackoffDelay := env.GetEnvAsInt("MAX_BACKOFF_DELAY", 500)
@@ -100,18 +124,17 @@ func main() {
 	hc := healthy.New(rdb, hcHTTPClient, paymentProcessorDefaultURL, paymentProcessorFallbackURL, 500, isPublisher)
 	hc.Start()
 
-	dbActor := engine.Spawn(actors.NewDBActor(rdb), "db-actor")
-	integrityProps := actors.NewIntegrityActor(processorHTTPClient, paymentProcessorDefaultURL, paymentProcessorFallbackURL, dbActor)
+	integrityProps := actors.NewIntegrityActor(processorHTTPClient, paymentProcessorDefaultURL, paymentProcessorFallbackURL, serverPID)
 	integrityPool := actors.NewPool(engine, integrityProps, "integrity", 1, 512)
 
 	retryActor := engine.Spawn(actors.NewRetryActor(retryTime, maxBackoffDelay, heapSize, hc), "retry-actor", actor.WithInboxSize(heapSize))
-	processorProps := actors.NewPaymentProcessorActor(processorHTTPClient, paymentProcessorDefaultURL, paymentProcessorFallbackURL, rdb, retryActor, integrityPool, hc)
+	processorProps := actors.NewPaymentProcessorActor(processorHTTPClient, paymentProcessorDefaultURL, paymentProcessorFallbackURL, retryActor, serverPID, integrityPool, hc)
 
-	processorActorPool := actors.NewPool(engine, processorProps, "processor", paymentProcessorPoolSize, 2048)
+	processorActorPool := actors.NewPool(engine, processorProps, "processor", paymentProcessorPoolSize, 1048)
 
 	usePreFork := env.GetEnvAsBool("USE_PREFORK", false)
 
-	s := server.New(engine, processorActorPool, dbActor, usePreFork)
+	s := server.New(engine, processorActorPool, serverPID, usePreFork)
 	s.Start(5000)
 
 	quit := make(chan os.Signal, 1)

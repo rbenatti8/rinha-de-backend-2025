@@ -6,11 +6,10 @@ import (
 	"github.com/rbenatti8/rinha-de-backend-2025/internal/database"
 	"github.com/rbenatti8/rinha-de-backend-2025/internal/healthy"
 	"github.com/rbenatti8/rinha-de-backend-2025/internal/messages"
-	"github.com/redis/go-redis/v9"
+	"github.com/rbenatti8/rinha-de-backend-2025/internal/proto"
 	"github.com/valyala/fasthttp"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"time"
 )
 
@@ -27,7 +26,6 @@ type PaymentProcessorActor struct {
 	fallbackProcessorURL string
 	bestPaymentProcessor string
 	dbActor              *actor.PID
-	redis                *redis.Client
 	retryActorPID        *actor.PID
 	integrityActorPool   *Pool
 	engine               *actor.Engine
@@ -96,10 +94,13 @@ func (a *PaymentProcessorActor) callProcessor(c *actor.Context, processor string
 		return
 	}
 
-	a.pushPayment(messages.PushPayment{
-		Payment:     msg.Payment,
+	c.Send(a.dbActor, &proto.PushPayment{
+		Payment: &proto.Payment{
+			Cid:         msg.Payment.CID,
+			Amount:      msg.Payment.Amount,
+			RequestedAt: msg.Payment.RequestedAt,
+		},
 		ProcessedBy: processor,
-		ProcessedAt: time.Now().UTC(),
 	})
 }
 
@@ -119,40 +120,40 @@ func (a *PaymentProcessorActor) sendToIntegrityActor(msg messages.ProcessPayment
 	})
 }
 
-func (a *PaymentProcessorActor) pushPayment(msg messages.PushPayment) {
-	t := time.Now()
-	bufPtr := bufPool.Get().(*[]byte)
-	buf := (*bufPtr)[:0]
-
-	buf = append(buf, msg.Payment.CID...)
-	buf = append(buf, '|')
-	buf = strconv.AppendFloat(buf, msg.Payment.Amount, 'f', -1, 64)
-	buf = append(buf, '|')
-	buf = append(buf, msg.Payment.RequestedAt...)
-	buf = append(buf, '|')
-	buf = append(buf, msg.ProcessedBy...)
-
-	timeToBuildBuf := time.Since(t)
-	if timeToBuildBuf > 30*time.Millisecond {
-		slog.Warn("Slow buffer creation for payment", slog.String("CID", msg.Payment.CID), slog.Duration("duration", timeToBuildBuf))
-	}
-	timeToArrive := time.Since(msg.ProcessedAt)
-	if timeToArrive > 100*time.Millisecond {
-		slog.Warn("Payment took too long to arrive", slog.String("ActorID", msg.Payment.CID), slog.Duration("time_to_arrive", timeToArrive))
-	}
-
-	t = time.Now()
-	err := a.redis.RPush(ctx, keyPaymentsAll, string(buf)).Err()
-	if err != nil {
-		slog.Error("Error pushing payments to Redis", slog.String("error", err.Error()))
-	}
-
-	if time.Since(t) > 100*time.Millisecond {
-		slog.Warn("Slow push to Redis", slog.String("CID", msg.Payment.CID), slog.Duration("duration", time.Since(t)))
-	}
-
-	bufPool.Put(bufPtr)
-}
+//func (a *PaymentProcessorActor) pushPayment(msg *messages.PushPayment) {
+//	t := time.Now()
+//	bufPtr := bufPool.Get().(*[]byte)
+//	buf := (*bufPtr)[:0]
+//
+//	buf = append(buf, msg.Payment.CID...)
+//	buf = append(buf, '|')
+//	buf = strconv.AppendFloat(buf, msg.Payment.Amount, 'f', -1, 64)
+//	buf = append(buf, '|')
+//	buf = append(buf, msg.Payment.RequestedAt...)
+//	buf = append(buf, '|')
+//	buf = append(buf, msg.ProcessedBy...)
+//
+//	timeToBuildBuf := time.Since(t)
+//	if timeToBuildBuf > 30*time.Millisecond {
+//		slog.Warn("Slow buffer creation for payment", slog.String("CID", msg.Payment.CID), slog.Duration("duration", timeToBuildBuf))
+//	}
+//	timeToArrive := time.Since(msg.ProcessedAt)
+//	if timeToArrive > 100*time.Millisecond {
+//		slog.Warn("Payment took too long to arrive", slog.String("ActorID", msg.Payment.CID), slog.Duration("time_to_arrive", timeToArrive))
+//	}
+//
+//	t = time.Now()
+//	err := a.redis.RPush(ctx, keyPaymentsAll, string(buf)).Err()
+//	if err != nil {
+//		slog.Error("Error pushing payments to Redis", slog.String("error", err.Error()))
+//	}
+//
+//	if time.Since(t) > 100*time.Millisecond {
+//		slog.Warn("Slow push to Redis", slog.String("CID", msg.Payment.CID), slog.Duration("duration", time.Since(t)))
+//	}
+//
+//	bufPool.Put(bufPtr)
+//}
 
 func isTimeoutErr(err error) bool {
 	if err != nil && err.Error() == "timeout" {
@@ -184,8 +185,8 @@ func isErr(payment messages.Payment, resp *fasthttp.Response, err error) bool {
 func NewPaymentProcessorActor(
 	client *fasthttp.Client,
 	defaultURL, fallbackURL string,
-	redis *redis.Client,
 	retryActorPID *actor.PID,
+	dbActor *actor.PID,
 	integrityActorPool *Pool,
 	hcChecker *healthy.Checker,
 ) actor.Producer {
@@ -194,7 +195,7 @@ func NewPaymentProcessorActor(
 			client:               client,
 			defaultProcessorURL:  defaultURL + "/payments",
 			fallbackProcessorURL: fallbackURL + "/payments",
-			redis:                redis,
+			dbActor:              dbActor,
 			retryActorPID:        retryActorPID,
 			integrityActorPool:   integrityActorPool,
 			hcChecker:            hcChecker,

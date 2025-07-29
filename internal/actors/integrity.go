@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"github.com/anthdm/hollywood/actor"
 	"github.com/rbenatti8/rinha-de-backend-2025/internal/messages"
+	"github.com/rbenatti8/rinha-de-backend-2025/internal/proto"
 	"github.com/valyala/fasthttp"
-	"time"
 )
 
 type IntegrityActor struct {
@@ -42,8 +42,12 @@ func (a *IntegrityActor) checkFallback(c *actor.Context, m messages.CheckIntegri
 		return
 	}
 
-	c.Send(a.dbActor, messages.PushPayment{
-		Payment:     m.Payment,
+	c.Send(a.dbActor, &proto.PushPayment{
+		Payment: &proto.Payment{
+			Cid:         m.Payment.CID,
+			Amount:      m.Payment.Amount,
+			RequestedAt: m.Payment.RequestedAt,
+		},
 		ProcessedBy: m.Processor,
 	})
 }
@@ -63,10 +67,13 @@ func (a *IntegrityActor) checkDefault(c *actor.Context, m messages.CheckIntegrit
 		return
 	}
 
-	c.Send(a.dbActor, messages.PushPayment{
-		Payment:     m.Payment,
+	c.Send(a.dbActor, &proto.PushPayment{
+		Payment: &proto.Payment{
+			Cid:         m.Payment.CID,
+			Amount:      m.Payment.Amount,
+			RequestedAt: m.Payment.RequestedAt,
+		},
 		ProcessedBy: m.Processor,
-		ProcessedAt: time.Now().UTC(),
 	})
 }
 

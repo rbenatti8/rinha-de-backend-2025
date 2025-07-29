@@ -7,6 +7,8 @@ import (
 	goJson "github.com/goccy/go-json"
 	"github.com/rbenatti8/rinha-de-backend-2025/internal/actors"
 	"github.com/rbenatti8/rinha-de-backend-2025/internal/messages"
+	"github.com/rbenatti8/rinha-de-backend-2025/internal/proto"
+	"github.com/shopspring/decimal"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/prefork"
 	"log/slog"
@@ -72,7 +74,7 @@ func (h *Handler) handleProcessPayment(ctx *fasthttp.RequestCtx) {
 }
 
 func (h *Handler) handlePurgePayments(ctx *fasthttp.RequestCtx) {
-	h.engine.Send(h.dbActor, messages.PurgePayments{})
+	h.engine.Send(h.dbActor, &proto.PurgePayments{})
 
 	ctx.SetStatusCode(fasthttp.StatusOK)
 }
@@ -92,9 +94,7 @@ func (h *Handler) handleGet(ctx *fasthttp.RequestCtx) {
 func (h *Handler) handleGetSummary(ctx *fasthttp.RequestCtx) {
 	msg := buildMessage(ctx)
 
-	slog.Info("Summary payments", slog.String("from", msg.From.String()), slog.String("to", msg.To.String()))
-
-	resp := h.engine.Request(h.dbActor, msg, 5*time.Second)
+	resp := h.engine.Request(h.dbActor, msg, 1*time.Second)
 
 	res, err := resp.Result()
 	if err != nil {
@@ -102,20 +102,23 @@ func (h *Handler) handleGetSummary(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	summaryResp, ok := res.(messages.SummarizedPayments)
+	summaryResp, ok := res.(*proto.SummarizedPayments)
 	if !ok {
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 		return
 	}
 
+	dTotalAmount, _ := decimal.NewFromString(summaryResp.Default.TotalAmount)
+	fTotalAmount, _ := decimal.NewFromString(summaryResp.Fallback.TotalAmount)
+
 	bodyResp, _ := goJson.Marshal(messages.SummarizedPayments{
 		Default: messages.SummarizedProcessor{
 			TotalRequests: summaryResp.Default.TotalRequests,
-			TotalAmount:   summaryResp.Default.TotalAmount,
+			TotalAmount:   dTotalAmount,
 		},
 		Fallback: messages.SummarizedProcessor{
 			TotalRequests: summaryResp.Fallback.TotalRequests,
-			TotalAmount:   summaryResp.Fallback.TotalAmount,
+			TotalAmount:   fTotalAmount,
 		},
 	})
 
@@ -126,20 +129,20 @@ func (h *Handler) handleGetSummary(ctx *fasthttp.RequestCtx) {
 	ctx.SetBody(bodyResp)
 }
 
-func buildMessage(c *fasthttp.RequestCtx) messages.SummarizePayments {
+func buildMessage(c *fasthttp.RequestCtx) *proto.SummarizePayments {
 	from := c.QueryArgs().Peek("from")
 	to := c.QueryArgs().Peek("to")
 
-	summaryReq := messages.SummarizePayments{}
+	summaryReq := &proto.SummarizePayments{}
 
-	pFrom, err := time.Parse(time.RFC3339Nano, string(from))
+	_, err := time.Parse(time.RFC3339Nano, string(from))
 	if err == nil {
-		summaryReq.From = &pFrom
+		summaryReq.From = string(from)
 	}
 
-	pTo, err := time.Parse(time.RFC3339Nano, string(to))
+	_, err = time.Parse(time.RFC3339Nano, string(to))
 	if err == nil {
-		summaryReq.To = &pTo
+		summaryReq.To = string(to)
 	}
 
 	return summaryReq

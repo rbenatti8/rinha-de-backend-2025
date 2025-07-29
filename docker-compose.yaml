@@ -15,7 +15,7 @@ services:
           cpus: "0.2"
           memory: "55MB"
   pod1: &pod
-      image: rbenatti8/rinha-backend-2025-api:latest
+      image: rbenatti8/rinha-backend-2025-api:2.0.0
       container_name: pod1
       networks:
         - backend
@@ -24,14 +24,17 @@ services:
         - REDIS_ADDRESS=redis:6379
         - PAYMENT_PROCESSOR_URL_DEFAULT=http://payment-processor-default:8080
         - PAYMENT_PROCESSOR_URL_FALLBACK=http://payment-processor-fallback:8080
-        - ACTOR_POOL_SIZE=300
+        - ACTOR_POOL_SIZE=100
         - WRITE_TIMEOUT=500
         - READ_TIMEOUT=500
-        - HEAP_SIZE=40000
+        - HEAP_SIZE=10000
         - USE_PREFORK=true
         - IS_PUBLISHER=true
+        - CLIENT_HOST=pod1:4001
+        - REMOTE_HOST=database:4000
       depends_on:
         - redis
+        - database
       deploy:
         resources:
           limits:
@@ -45,12 +48,14 @@ services:
       - REDIS_ADDRESS=redis:6379
       - PAYMENT_PROCESSOR_URL_DEFAULT=http://payment-processor-default:8080
       - PAYMENT_PROCESSOR_URL_FALLBACK=http://payment-processor-fallback:8080
-      - ACTOR_POOL_SIZE=300
+      - ACTOR_POOL_SIZE=100
       - WRITE_TIMEOUT=500
       - READ_TIMEOUT=500
-      - HEAP_SIZE=40000
+      - HEAP_SIZE=10000
       - USE_PREFORK=true
       - IS_PUBLISHER=false
+      - CLIENT_HOST=pod2:4001
+      - REMOTE_HOST=database:4000
   pod3:
     <<: *pod
     container_name: pod3
@@ -58,12 +63,14 @@ services:
       - REDIS_ADDRESS=redis:6379
       - PAYMENT_PROCESSOR_URL_DEFAULT=http://payment-processor-default:8080
       - PAYMENT_PROCESSOR_URL_FALLBACK=http://payment-processor-fallback:8080
-      - ACTOR_POOL_SIZE=300
+      - ACTOR_POOL_SIZE=100
       - WRITE_TIMEOUT=500
       - READ_TIMEOUT=500
-      - HEAP_SIZE=40000
+      - HEAP_SIZE=10000
       - USE_PREFORK=true
       - IS_PUBLISHER=false
+      - CLIENT_HOST=pod3:4001
+      - REMOTE_HOST=database:4000
   pod4:
     <<: *pod
     container_name: pod4
@@ -71,12 +78,27 @@ services:
       - REDIS_ADDRESS=redis:6379
       - PAYMENT_PROCESSOR_URL_DEFAULT=http://payment-processor-default:8080
       - PAYMENT_PROCESSOR_URL_FALLBACK=http://payment-processor-fallback:8080
-      - ACTOR_POOL_SIZE=300
+      - ACTOR_POOL_SIZE=100
       - WRITE_TIMEOUT=500
       - READ_TIMEOUT=500
-      - HEAP_SIZE=40000
+      - HEAP_SIZE=10000
       - USE_PREFORK=true
       - IS_PUBLISHER=false
+      - CLIENT_HOST=pod4:4001
+      - REMOTE_HOST=database:4000
+  database:
+    image: rbenatti8/rinha-backend-2025-remote:1.0.0
+    container_name: database
+    networks:
+      - backend
+      - payment-processor
+    environment:
+      - LOCAL_HOST=database:4000
+    deploy:
+      resources:
+        limits:
+          cpus: "0.3"
+          memory: "65MB"
   redis:
     image: redis:7-alpine
     container_name: redis-cache-rinha

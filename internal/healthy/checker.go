@@ -114,26 +114,25 @@ func (c *Checker) checkServiceHealth() {
 func (c *Checker) chooseProcessor(hcs map[string]ServiceHealth) string {
 	def := hcs["default"]
 	fbk := hcs["fallback"]
+
 	now := time.Now()
+	defaultIsSlow := def.MinResponseTime > c.maxLatency
+	defaultUnavailable := def.Failing || defaultIsSlow
 
-	if def.Failing || def.MinResponseTime > c.maxLatency {
-		if !c.isDefaultFailing {
-			c.isDefaultFailing = true
-			c.defaultFailingStartTime = now
-		}
-	} else {
-		if c.isDefaultFailing {
-			c.isDefaultFailing = false
-		}
+	switch {
+	case defaultUnavailable && !c.isDefaultFailing:
+		c.isDefaultFailing = true
+		c.defaultFailingStartTime = now
+	case !defaultUnavailable && c.isDefaultFailing:
+		c.isDefaultFailing = false
+	}
 
+	if !defaultUnavailable {
 		return "default"
 	}
 
-	if c.isDefaultFailing {
-		elapsed := now.Sub(c.defaultFailingStartTime)
-		if elapsed < 20*time.Second {
-			return "waiting"
-		}
+	if c.isDefaultFailing && time.Since(c.defaultFailingStartTime) < 20*time.Second {
+		return "waiting"
 	}
 
 	if !fbk.Failing && fbk.MinResponseTime < c.maxLatency {
@@ -143,16 +142,16 @@ func (c *Checker) chooseProcessor(hcs map[string]ServiceHealth) string {
 	if def.Failing && fbk.Failing {
 		return "none"
 	}
-	if def.MinResponseTime > c.maxLatency && fbk.MinResponseTime > c.maxLatency {
+
+	if defaultIsSlow && fbk.MinResponseTime > c.maxLatency {
 		return "none"
 	}
 
-	if c.isDefaultFailing && !fbk.Failing && def.MinResponseTime > fbk.MinResponseTime+(fbk.MinResponseTime/2) {
+	if !fbk.Failing && def.MinResponseTime > fbk.MinResponseTime+(fbk.MinResponseTime/2) {
 		return "fallback"
 	}
 
 	return "default"
-
 }
 
 func computeEffectiveCost(tax float64, latency int64, failing bool) float64 {
