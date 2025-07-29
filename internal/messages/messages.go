@@ -7,15 +7,15 @@ import (
 )
 
 type Payment struct {
-	CID         string  `json:"correlationId"`
 	Amount      float64 `json:"amount"`
+	CID         string  `json:"correlationId"`
 	RequestedAt string  `json:"requestedAt"`
 }
 
 type PushPayment struct {
 	Payment     Payment
-	ProcessedBy string
 	ProcessedAt time.Time
+	ProcessedBy string
 }
 
 type PushToRedis struct{}
@@ -28,8 +28,8 @@ type SummarizePayments struct {
 }
 
 type SummarizedProcessor struct {
-	TotalRequests int64           `json:"totalRequests"`
 	TotalAmount   decimal.Decimal `json:"totalAmount"`
+	TotalRequests int64           `json:"totalRequests"`
 }
 type SummarizedPayments struct {
 	Default  SummarizedProcessor `json:"default"`
