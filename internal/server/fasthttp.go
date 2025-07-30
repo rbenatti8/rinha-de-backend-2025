@@ -92,8 +92,6 @@ func (h *Handler) handleGet(ctx *fasthttp.RequestCtx) {
 func (h *Handler) handleGetSummary(ctx *fasthttp.RequestCtx) {
 	msg := buildMessage(ctx)
 
-	slog.Info("Summary payments", slog.String("from", msg.From.String()), slog.String("to", msg.To.String()))
-
 	resp := h.engine.Request(h.dbActor, msg, 5*time.Second)
 
 	res, err := resp.Result()
@@ -130,14 +128,15 @@ func buildMessage(c *fasthttp.RequestCtx) messages.SummarizePayments {
 	from := c.QueryArgs().Peek("from")
 	to := c.QueryArgs().Peek("to")
 
+	slog.Info("Summary received: ", from, "-", to)
 	summaryReq := messages.SummarizePayments{}
 
-	pFrom, err := time.Parse(time.RFC3339Nano, string(from))
+	pFrom, err := time.Parse(time.RFC3339, string(from))
 	if err == nil {
 		summaryReq.From = &pFrom
 	}
 
-	pTo, err := time.Parse(time.RFC3339Nano, string(to))
+	pTo, err := time.Parse(time.RFC3339, string(to))
 	if err == nil {
 		summaryReq.To = &pTo
 	}
